@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../deploy/Containerfile.backend
+    container_name: infrapulse_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=True
+      - SECRET_KEY=infrapulse-production-secret-change-me
+      - ALLOWED_HOSTS=*
+      - RUNTIME_ADAPTER=podman
+      - COLLECTOR_POLL_INTERVAL_SECONDS=5
+    volumes:
+      - infrapulse_data:/app/infrapulse_data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../deploy/Containerfile.frontend
+    container_name: infrapulse_frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  collector:
+    build:
+      context: ../backend
+      dockerfile: ../deploy/Containerfile.collector
+    container_name: infrapulse_collector
+    environment:
+      - RUNTIME_ADAPTER=podman
+      - COLLECTOR_POLL_INTERVAL_SECONDS=5
+    volumes:
+      # Restricted read-only mount of Podman API socket for host-side telemetry
+      - /run/user/1000/podman/podman.sock:/run/podman/podman.sock:ro
+      - infrapulse_data:/app/infrapulse_data
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  prometheus:
+    image: docker.io/prom/prometheus:latest
+    container_name: infrapulse_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  infrapulse_data:
+  prometheus_data:
